@@ -64,7 +64,7 @@ if st.button("Evaluate model"):
     preds = model.predict(X_test)
     
     acc = accuracy_score(y_test, preds)
-    st.metric("Metric value",acc)
+    st.metric("Metric value", acc)
     
 
 st.dataframe(df)
