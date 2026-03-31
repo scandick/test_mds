@@ -12,9 +12,7 @@ from pydantic import BaseModel # для валидации данных, кот�
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-
 from sklearn.datasets import load_digits
-
 
 app = FastAPI()
 
@@ -27,8 +25,7 @@ class Item(BaseModel):
 class TrainRequest(BaseModel):
     max_iter: int
     name: str
-    
-    
+      
 @app.get("/")
 def root():
     return {"message": "Сервер работает!"}
@@ -38,6 +35,7 @@ def calc_sum(item: Item):
     res = item.x + item.y
     return {"message": res}
 
+#
 def train_model(req):
     data = load_digits()
     X, y = data.data, data.target
@@ -59,7 +57,6 @@ def train_model(req):
     
     # путь для сохранения модели
     model_path = os.path.join(MODELS_DIR, f"{req.name}.pkl")
-    
     
     # сериализация модели
     with open(model_path, "wb") as f:
