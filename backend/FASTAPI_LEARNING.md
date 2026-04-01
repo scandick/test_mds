@@ -340,54 +340,230 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-SECRET_KEY = "your-secret-key"  # Меняй на случайную строку!
-ALGORITHM = "HS256"
+# ═══════════════════════════════════════════════════════════════════════
+# ШАГЕ 1: КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ
+# ═══════════════════════════════════════════════════════════════════════
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+SECRET_KEY = "your-secret-key"  # 🔐 Суперсекретный ключ! Кодируй случайную строку (используй: openssl rand -hex 32)
+ALGORITHM = "HS256"  # 🔐 Алгоритм шифрования JWT (HS256 = HMAC-SHA256)
+
+# CryptContext настроивает хеширование паролей
+pwd_context = CryptContext(
+    schemes=["bcrypt"],  # bcrypt = криптография с солью, защита от радужных таблиц
+    deprecated="auto"   # Автоматически обновляет старые хеши при проверке
+)
+
+# ═══════════════════════════════════════════════════════════════════════
+# ШАГЕ 2: ФУНКЦИИ РАБОТЫ С ПАРОЛЯМИ
+# ═══════════════════════════════════════════════════════════════════════
 
 def hash_password(password: str):
+    """
+    Превращает пароль в нечитаемый хеш.
+    ✅ БЕЗОПАСНО: каждый раз разный результат (из-за соли)
+    ❌ НЕЛЬЗЯ вернуть пароль из хеша (one-way функция)
+    
+    Пример:
+    - password="secret" → hash="$2b$12$eIEZ.1..."
+    - Даже если два раза хешировать "secret", будут разные результаты
+    """
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str):
+    """
+    Сравнивает обычный пароль с хешем.
+    ✅ Проверяет: совпадает ли password с тем, что был захеширован
+    
+    Пример:
+    - plain_password="secret", hashed="$2b$12$eIEZ.1..." → True
+    - plain_password="wrong", hashed="$2b$12$eIEZ.1..." → False
+    """
     return pwd_context.verify(plain_password, hashed_password)
 
+# ═══════════════════════════════════════════════════════════════════════
+# ШАГЕ 3: ФУНКЦИЯ СОЗДАНИЯ JWT ТОКЕНА
+# ═══════════════════════════════════════════════════════════════════════
+
 def create_access_token(data: dict, expires_delta: timedelta = None):
+    """
+    Создаёт JWT токен (подписанную строку с данными).
+    
+    Что это такое?
+    JWT = 3 части, разделённые точками:
+    header.payload.signature
+    
+    Пример реального токена:
+    eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+    eyJzdWIiOiJhZG1pbiIsImV4cCI6MTcxMjAwMDAwMH0.
+    SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+    
+    Шаг 1: Копируем данные (чтобы не потеряться с исходным dict)
+    """
     to_encode = data.copy()
+    
+    """
+    Шаг 2: Добавляем время истечения (exp = expiration)
+    Если expires_delta не задан → токен живёт 24 часа
+    Иначе → живёт столько, сколько указали
+    """
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(hours=24)
+        expire = datetime.utcnow() + timedelta(hours=24)  # По умолчанию 24 часа
+    
+    """
+    Шаг 3: Добавляем "exp" в данные (это стандартное поле JWT)
+    Сервер будет проверять: не истёк ли токен при проверке
+    """
     to_encode.update({"exp": expire})
+    
+    """
+    Шаг 4: Кодируем и подписываем (HMAC-SHA256)
+    SECRET_KEY = подпись, которая доказывает, что токен создал именно мы
+    Если строку внутри токена изменить → подпись не совпадёт → токен украдена!
+    """
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    
+    return encoded_jwt  # Возвращаем готовый токен (строку)
+
+# ═══════════════════════════════════════════════════════════════════════
+# ШАГЕ 4: ENDPOINT ЛОГИНА (выдаёт токен)
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.post("/login")
 def login(username: str, password: str):
-    # Проверка в БД (упрощено)
+    """
+    Клиент отправляет username и password.
+    Если верны → получает токен.
+    Если неверны → ошибка 401 Unauthorized.
+    
+    ВАЖНО: Это БЕЗ Basic Auth, прямые параметры!
+    """
+    
+    # Проверка в БД (упрощено, в реальности искали бы в БД)
     if username == "admin" and password == "secret":
+        # Создаём токен с именем пользователя
+        # "sub" = subject (стандартное имя в JWT для юзера)
         access_token = create_access_token({"sub": username})
-        return {"access_token": access_token, "token_type": "bearer"}
+        
+        # Возвращаем объект с токеном
+        return {
+            "access_token": access_token,  # Сам токен (строка)
+            "token_type": "bearer"          # Тип: "bearer" = используется в Authorization: Bearer <token>
+        }
+    
+    # Неверные учётные данные → 401
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
+# ═══════════════════════════════════════════════════════════════════════
+# ШАГЕ 5: ФУНКЦИЯ ПРОВЕРКИ ТОКЕНА
+# ═══════════════════════════════════════════════════════════════════════
+
 def verify_token(token: str = Depends(HTTPBearer())):
+    """
+    Проверяет JWT токен из заголовка Authorization.
+    
+    HTTPBearer() = FastAPI сам вытаскивает строку из:
+    Authorization: Bearer eyJhbGc...
+    (вытаскивает часть после "Bearer ")
+    
+    Возвращает: username, если токен валидный
+    Ошибка 401, если недействительный
+    """
     try:
-        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        # Декодируем токен (проверяем подпись + формат)
+        # jwt.decode автоматически проверит:
+        # 1. Подпись правильная (SECRET_KEY совпадает)
+        # 2. Время истечения (exp) не прошло
+        payload = jwt.decode(
+            token.credentials,      # Сам токен
+            SECRET_KEY,             # Ключ подписи (если не совпадает → ошибка!)
+            algorithms=[ALGORITHM]  # Какой алгоритм использовали
+        )
+        
+        # Вытаскиваем username из payload ("sub" = subject)
         username = payload.get("sub")
+        
+        # Если username отсутствует → токен повреждён
         if username is None:
-            raise HTTPException(status_code=401)
-        return username
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        return username  # Успех! Возвращаем username
+    
     except JWTError:
-        raise HTTPException(status_code=401)
+        # Ошибка при декодировании (неверная подпись, истёк токен и т.д.)
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# ═══════════════════════════════════════════════════════════════════════
+# ШАГЕ 6: ЗАЩИЩЁННЫЙ ENDPOINT
+# ═══════════════════════════════════════════════════════════════════════
 
 @app.get("/protected")
 def protected(current_user: str = Depends(verify_token)):
+    """
+    Этот endpoint ТРЕБУЕТ валидный JWT токен.
+    
+    Как работает:
+    1. Клиент отправляет GET /protected с заголовком:
+       Authorization: Bearer eyJhbGc...
+    2. FastAPI вызовет verify_token()
+    3. Если токен валидный → current_user = username
+    4. Если токен неверный → ошибка 401, функция не вызовется
+    
+    Это dependency injection: verify_token автоматически вызывается!
+    """
     return {"message": f"Hello, {current_user}"}
 
-# 1. POST /login → получи токен
-# 2. GET /protected с заголовком Authorization: Bearer <token>
+# ═══════════════════════════════════════════════════════════════════════
+# ПОЛНЫЙ ПОТОК АУТЕНТИФИКАЦИИ
+# ═══════════════════════════════════════════════════════════════════════
+
+# ШАГ 1: Логин (получить токен)
+# POST /login?username=admin&password=secret
+# Ответ: {"access_token": "eyJhbGc...", "token_type": "bearer"}
+
+# ШАГ 2: Получить защищённые данные
+# GET /protected
+# Заголовок: Authorization: Bearer eyJhbGc...
+# Ответ: {"message": "Hello, admin"}
+
+# ШАГ 3: Если токен истёк или неверный
+# GET /protected (с неверным/истёкшим токеном)
+# Ответ: 401 Unauthorized
 ```
 
 **Установка:** `pip install python-jose passlib bcrypt`
+
+---
+
+### 📚 Ключевые отличия JWT от Basic Auth
+
+| Параметр | Basic Auth | JWT |
+|----------|-----------|-----|
+| **Передача** | Base64(username:password) в заголовке | Подписанный токен |
+| **Безопасность** | Пароль видна в base64 | Токен подписан, пароль не отправляется |
+| **HTTPS** | ОБЯЗАТЕЛЕН | Рекомендуется |
+| **Время жизни** | Каждый запрос проверяется заново | Токен живёт N часов |
+| **Скорость** | Медленнее (проверка пароля каждый раз) | Быстрее (только проверка подписи) |
+| **Стандарт** | HTTP базовый | Современный стандарт |
+
+---
+
+### 🔒 Важные моменты безопасности
+
+1. **SECRET_KEY — абсолютный секрет!**
+   - Генерируй: `openssl rand -hex 32`
+   - Храни в `.env` файле, НЕ в коде
+   - Если утечка → пересоздай все токены
+
+2. **Время истечения (exp)**
+   - Короче (15 минут) = безопаснее
+   - Длиннее (7 дней) = удобнее
+   - Обычно используют refresh-токены (они обновляют access-токены)
+
+3. **HTTPS в production**
+   - Без HTTPS даже JWT может быть украден
+   - Используй SSL сертификат (Let's Encrypt бесплатный)
 
 ---
 

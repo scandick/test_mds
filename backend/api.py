@@ -73,3 +73,5 @@ def train(req: TrainRequest, background_tasks: BackgroundTasks): # приним�
         "model_name": req.name,
         "message": "Model saved"
     }        
+
+

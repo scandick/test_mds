@@ -2,7 +2,7 @@ import asyncio
 
 from fastapi import FastAPI 
 
-from pydantic import BaseModel # основа моделей данных
+from pydantic import BaseModel, HttpUrl # основа моделей данных
 
 app = FastAPI()
 #
@@ -129,6 +129,37 @@ def send_email(email: str, message: str):
 @app.post("/send-email")
 def send_email_endpoint(email: str, 
                         message: str,
-                        background_tasks: BackgroundTasks):
+                        background_tasks: BackgroundTasks): # условная обертка для запуска задачи в фоне
     background_tasks.add_task(send_email, email, message)
     return {"message": "Email будет отправлена в фоне"}
+
+
+# ---------------------------------------------------------------------------------
+import httpx # асинхронный HTTP клиент, зачем нужен - для вызова внешних API из нашего приложения
+#from pydantic import HttpUrl # для валидации URL
+
+@app.get("/fetch-data")
+async def fetch_data(url: str):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(str(url))
+        return response.json()
+
+# --------------------------------------------------------------------------------
+# Аутентификация и авторизация
+from fastapi import HTTPException # выбрасывает ошибки при неудачной аутентификации
+from fastapi import Depends # dependency injection: позволяет инжектировать проверку аутентификации в эндпоинты
+
+from fastapi.security import HTTPBasic # класс для настройки Basic Authentification
+from fastapi.security import HTTPBasicCredentials # модель данных для хранения username/password
+
+security = HTTPBasic()
+@app.get("/protected") # проверяет подходящий ли логин/пароль
+def protected_route(credentials: HTTPBasicCredentials = Depends(security)):
+    if credentials.username != "admin" or credentials.password != "secret":
+        raise HTTPException(status_code=401, 
+                        detail='Неверные данные учётной записи')
+    return {"message": f"Добро пожаловать, {credentials.username}"}
+
+# --------------------------------------------------------------------------------
+# JWT (JSON Web Tokens) - более современный способ аутентификации, который позволяет создавать токены доступа с определёнными правами и сроком действия.
+
