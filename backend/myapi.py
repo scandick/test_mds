@@ -161,5 +161,3 @@ def protected_route(credentials: HTTPBasicCredentials = Depends(security)):
     return {"message": f"Добро пожаловать, {credentials.username}"}
 
 # --------------------------------------------------------------------------------
-# JWT (JSON Web Tokens) - более современный способ аутентификации, который позволяет создавать токены доступа с определёнными правами и сроком действия.
-
