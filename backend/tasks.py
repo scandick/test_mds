@@ -14,6 +14,7 @@ class TaskOut(TaskIn):
 db: Dict[int, TaskOut] = {}
 counter = 1
 
+# создание задачи
 @app.post("/tasks", response_model=TaskOut, status_code=201)
 def create_task(task: TaskIn):
     global counter
@@ -22,6 +23,7 @@ def create_task(task: TaskIn):
     counter += 1
     return new_task
 
+# получение задачи по id
 @app.get("/tasks/{task_id}", response_model=TaskOut)
 def get_task(task_id: int):
     task = db.get(task_id)
@@ -29,6 +31,7 @@ def get_task(task_id: int):
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
+# обновление задачи (установка флага done в True)
 @app.patch("/tasks/{task_id}/done", response_model=TaskOut)
 def mark_done(task_id: int):
     task = db.get(task_id)

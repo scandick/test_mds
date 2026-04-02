@@ -102,3 +102,5 @@ def protected(current_user: str = Depends(verify_token)):
     # Если токен валидный → current_user = username
     # Если токен неверный → ошибка 401, функция не вызовется
     return {"message": f"Hello, {current_user}"}
+
+# TODO: добавить регистрацию, хранение юзеров в БД, возможность задавать права доступа в токене (например, admin/user) и проверять их в эндпоинтах
