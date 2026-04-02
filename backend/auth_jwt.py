@@ -2,13 +2,16 @@ from datetime import datetime, timedelta, timezone
 
 # для создания jwt токена пользователя
 from fastapi import Depends, HTTPException
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer
+
 import jwt
 from passlib.context import CryptContext
 
 from fastapi import FastAPI
 
-SECRET_KEY = "key"
+import secrets # аналог openssl rand -hex 64 # TODO: заменить на получение из env
+
+SECRET_KEY = secrets.token_hex(64) # ключ подписи 
 ALGORITHM = "HS256" # алгоритм шифрования
 
 app = FastAPI()
@@ -59,19 +62,43 @@ def create_access_token(data: dict,
 
 security = HTTPBasic()
 
+# !!! эндпоинт, выдающий токен
 @app.post("/login") # проверяет подходящий ли логин/пароль
-def protected_route(credentials: HTTPBasicCredentials = Depends(security)):
+def login(credentials: HTTPBasicCredentials = Depends(security)):
     if credentials.username == "admin" or credentials.password == "secret":
         # создание токена с имененм пользователя, "sub" - стандартное имя для юзера в JWT
         access_token = create_access_token({"sub": credentials.username})
         
         return {
             "access_token": access_token,
-            "token_type": "bearer"            
+            "token_type": "bearer" # этот тип будет вытаскиваться потом в HTTPBearer()         
         }
         
     raise HTTPException(status_code=401, 
                         detail='Неверные данные учётной записи')
-
-
-
+    
+# HTTPBearer() = FastAPI сам вытаскивает токен из заголовка Authorization: Bearer <token>
+def verify_token(token: str = Depends(HTTPBearer())): 
+    try:
+        # Декодируем токен (проверяем подпись и формат)
+        payload = jwt.decode(
+            token.credentials, 
+            SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+    except (jwt.InvalidTokenError, jwt.DecodeError): 
+        raise HTTPException(status_code=401, detail='Неверный токен')
+    
+    # Вытаскиваем username из payload
+    username = payload.get("sub")
+    
+    # Если username отсутствует — токен повреждён
+    if username is None: 
+        raise HTTPException(status_code=401, detail='Имя пустое, токен поврежден') # TODO ветка не отрабатывает
+    return username
+            
+@app.get("/protected") # эндпоинт, проверяющий валидность токена
+def protected(current_user: str = Depends(verify_token)):
+    # Если токен валидный → current_user = username
+    # Если токен неверный → ошибка 401, функция не вызовется
+    return {"message": f"Hello, {current_user}"}
